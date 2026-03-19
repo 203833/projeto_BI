@@ -1,13 +1,3 @@
-"""
-ETL Pipeline — Data Warehouse de Transações de Cartão de Crédito
-
-Pipeline completo para:
-  1. Criar as tabelas do DW no PostgreSQL (DDL)
-  2. Extrair dados dos 12 arquivos CSV de faturas
-  3. Transformar (limpeza, normalização, geração de chaves)
-  4. Carregar dimensões e fato no banco de dados
-"""
-
 import os
 import glob
 import re
@@ -19,9 +9,6 @@ import pandas as pd
 from sqlalchemy import create_engine, text
 from dotenv import load_dotenv
 
-# ---------------------------------------------------------------------------
-# Configuração de logging
-# ---------------------------------------------------------------------------
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -29,9 +16,6 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Configuração do banco de dados
-# ---------------------------------------------------------------------------
 load_dotenv()
 
 DB_HOST = os.getenv("DB_HOST", "localhost")
@@ -70,12 +54,7 @@ NOMES_MES = {
 }
 
 
-# ============================================================================
-# FASE 1 — EXTRACT
-# ============================================================================
-
 def extract_csv_files(data_dir: Path) -> pd.DataFrame:
-    """Lê todos os arquivos Fatura_*.csv do diretório e concatena em um DataFrame."""
     csv_pattern = str(data_dir / "Fatura_*.csv")
     files = sorted(glob.glob(csv_pattern))
 
@@ -103,17 +82,7 @@ def extract_csv_files(data_dir: Path) -> pd.DataFrame:
     return combined
 
 
-# ============================================================================
-# FASE 2 — TRANSFORM
-# ============================================================================
-
 def parse_parcela(parcela_texto: str) -> tuple:
-    """
-    Extrai num_parcela e total_parcelas a partir do texto da parcela.
-    - "Única" → (1, 1)
-    - "2/10"  → (2, 10)
-    - Outros  → (None, None)
-    """
     if not parcela_texto or pd.isna(parcela_texto):
         return None, None
 
@@ -130,7 +99,6 @@ def parse_parcela(parcela_texto: str) -> tuple:
 
 
 def clean_numeric(value: str) -> float:
-    """Converte string numérica para float, tratando vírgulas e valores vazios."""
     if not value or pd.isna(value) or str(value).strip() in ("", "-"):
         return 0.0
 
@@ -142,17 +110,14 @@ def clean_numeric(value: str) -> float:
 
 
 def transform(df: pd.DataFrame) -> pd.DataFrame:
-    """Aplica todas as transformações nos dados brutos."""
     log.info("Iniciando transformações...")
 
     result = df.copy()
 
-    # --- Limpeza de espaços em branco ---
     for col in result.columns:
         if result[col].dtype == object:
             result[col] = result[col].str.strip()
 
-    # --- Data de Compra → datetime ---
     result["data_compra"] = pd.to_datetime(
         result["Data de Compra"], format="%d/%m/%Y", errors="coerce"
     )
@@ -161,7 +126,6 @@ def transform(df: pd.DataFrame) -> pd.DataFrame:
         log.warning("  %d registros com data inválida (serão removidos)", invalid_dates)
         result = result.dropna(subset=["data_compra"])
 
-    # --- Atributos derivados da data ---
     result["dia"] = result["data_compra"].dt.day
     result["mes"] = result["data_compra"].dt.month
     result["trimestre"] = result["data_compra"].dt.quarter
@@ -170,29 +134,24 @@ def transform(df: pd.DataFrame) -> pd.DataFrame:
     result["nome_dia"] = result["dia_semana"].map(DIAS_SEMANA)
     result["nome_mes"] = result["mes"].map(NOMES_MES)
 
-    # --- Titular ---
     result["nome_titular"] = result["Nome no Cartão"].fillna("Não informado").str.strip()
     result["final_cartao"] = result["Final do Cartão"].fillna("0000").astype(str).str.strip()
 
-    # --- Categoria ---
     result["nome_categoria"] = result["Categoria"].fillna("Não categorizado").str.strip()
     result["nome_categoria"] = result["nome_categoria"].replace(
         {"-": "Não categorizado", "": "Não categorizado"}
     )
 
-    # --- Estabelecimento ---
     result["nome_estabelecimento"] = result["Descrição"].fillna("Não informado").str.strip()
     result["nome_estabelecimento"] = result["nome_estabelecimento"].str.strip('"')
     result["nome_estabelecimento"] = result["nome_estabelecimento"].replace(
         {"": "Não informado", "-": "Não informado"}
     )
 
-    # --- Valores numéricos ---
     result["valor_brl"] = result["Valor (em R$)"].apply(clean_numeric)
     result["valor_usd"] = result["Valor (em US$)"].apply(clean_numeric)
     result["cotacao"] = result["Cotação (em R$)"].apply(clean_numeric)
 
-    # --- Parcelas ---
     result["parcela_texto"] = result["Parcela"].fillna("Única").str.strip()
     parcelas = result["parcela_texto"].apply(parse_parcela)
     result["num_parcela"] = parcelas.apply(lambda x: x[0])
@@ -202,12 +161,7 @@ def transform(df: pd.DataFrame) -> pd.DataFrame:
     return result
 
 
-# ============================================================================
-# FASE 3 — LOAD
-# ============================================================================
-
 def create_schema_and_tables(engine):
-    """Cria o schema e as tabelas do DW (full load — drop e recria)."""
     ddl_path = Path(__file__).resolve().parent.parent / "sql" / "01_create_database.sql"
 
     log.info("Executando DDL: %s", ddl_path)
@@ -222,13 +176,12 @@ def create_schema_and_tables(engine):
                 try:
                     conn.execute(text(stmt))
                 except Exception as e:
-                    log.warning("DDL ignorado (possível CREATE DATABASE): %s", str(e)[:100])
+                    log.warning("DDL ignorado: %s", str(e)[:100])
 
     log.info("Schema e tabelas criados com sucesso")
 
 
 def load_dim_data(engine, df: pd.DataFrame):
-    """Carrega a dimensão dim_data."""
     dim_data = (
         df[["data_compra", "dia", "mes", "trimestre", "ano", "dia_semana", "nome_dia", "nome_mes"]]
         .drop_duplicates(subset=["data_compra"])
@@ -254,7 +207,6 @@ def load_dim_data(engine, df: pd.DataFrame):
 
 
 def load_dim_titular(engine, df: pd.DataFrame):
-    """Carrega a dimensão dim_titular."""
     dim_titular = (
         df[["nome_titular", "final_cartao"]]
         .drop_duplicates()
@@ -282,7 +234,6 @@ def load_dim_titular(engine, df: pd.DataFrame):
 
 
 def load_dim_categoria(engine, df: pd.DataFrame):
-    """Carrega a dimensão dim_categoria."""
     dim_cat = (
         df[["nome_categoria"]]
         .drop_duplicates()
@@ -310,7 +261,6 @@ def load_dim_categoria(engine, df: pd.DataFrame):
 
 
 def load_dim_estabelecimento(engine, df: pd.DataFrame):
-    """Carrega a dimensão dim_estabelecimento."""
     dim_estab = (
         df[["nome_estabelecimento"]]
         .drop_duplicates()
@@ -345,7 +295,6 @@ def load_fato_transacao(
     lookup_categoria: dict,
     lookup_estabelecimento: dict,
 ):
-    """Carrega a tabela fato, resolvendo FKs via lookups das dimensões."""
     log.info("Montando tabela fato com resolução de chaves...")
 
     fato = pd.DataFrame()
@@ -394,12 +343,7 @@ def load_fato_transacao(
     )
 
 
-# ============================================================================
-# VALIDAÇÃO
-# ============================================================================
-
 def validate_load(engine):
-    """Executa validações básicas após a carga."""
     log.info("=" * 60)
     log.info("VALIDAÇÃO PÓS-CARGA")
     log.info("=" * 60)
@@ -446,12 +390,7 @@ def validate_load(engine):
     log.info("Validação concluída com sucesso!")
 
 
-# ============================================================================
-# ORQUESTRADOR PRINCIPAL
-# ============================================================================
-
 def run_etl():
-    """Executa o pipeline ETL completo."""
     start_time = datetime.now()
     log.info("=" * 60)
     log.info("INÍCIO DO PIPELINE ETL")
@@ -459,19 +398,15 @@ def run_etl():
 
     engine = create_engine(DATABASE_URL)
 
-    # Fase 0: Criar schema e tabelas
     log.info("[FASE 0] Criando schema e tabelas...")
     create_schema_and_tables(engine)
 
-    # Fase 1: Extract
     log.info("[FASE 1] Extraindo dados dos CSVs...")
     raw_df = extract_csv_files(DATA_DIR)
 
-    # Fase 2: Transform
     log.info("[FASE 2] Transformando dados...")
     transformed_df = transform(raw_df)
 
-    # Fase 3: Load
     log.info("[FASE 3] Carregando dados no Data Warehouse...")
 
     log.info("  Carregando dimensões...")
@@ -490,7 +425,6 @@ def run_etl():
         lookup_estabelecimento,
     )
 
-    # Validação
     validate_load(engine)
 
     elapsed = datetime.now() - start_time

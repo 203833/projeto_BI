@@ -1,12 +1,3 @@
--- =============================================================================
--- Consultas Analíticas — Data Warehouse de Transações de Cartão de Crédito
--- Fase 3: Validação e análises de negócio
--- =============================================================================
-
--- =============================================================================
--- 1. Gasto total por titular no período completo
--- =============================================================================
-
 SELECT
     t.nome_titular,
     t.final_cartao,
@@ -20,10 +11,6 @@ JOIN dw.dim_titular t ON f.id_titular = t.id_titular
 GROUP BY t.nome_titular, t.final_cartao
 ORDER BY total_brl DESC;
 
-
--- =============================================================================
--- 2. Gasto mensal por titular (série temporal)
--- =============================================================================
 
 SELECT
     t.nome_titular,
@@ -39,10 +26,6 @@ GROUP BY t.nome_titular, d.ano, d.mes, d.nome_mes
 ORDER BY t.nome_titular, d.ano, d.mes;
 
 
--- =============================================================================
--- 3. Top 10 categorias por valor total (apenas débitos)
--- =============================================================================
-
 SELECT
     c.nome_categoria,
     COUNT(f.id_transacao)  AS qtd_transacoes,
@@ -55,10 +38,6 @@ GROUP BY c.nome_categoria
 ORDER BY total_brl DESC
 LIMIT 10;
 
-
--- =============================================================================
--- 4. Evolução mensal do total gasto (série temporal geral)
--- =============================================================================
 
 SELECT
     d.ano,
@@ -73,10 +52,6 @@ JOIN dw.dim_data d ON f.id_data = d.id_data
 GROUP BY d.ano, d.mes, d.nome_mes
 ORDER BY d.ano, d.mes;
 
-
--- =============================================================================
--- 5. Comparativo entre titulares (valor médio por transação e quantidade)
--- =============================================================================
 
 SELECT
     t.nome_titular,
@@ -93,10 +68,6 @@ GROUP BY t.nome_titular
 ORDER BY total_brl DESC;
 
 
--- =============================================================================
--- 6. Top 15 estabelecimentos por valor total
--- =============================================================================
-
 SELECT
     e.nome_estabelecimento,
     COUNT(f.id_transacao)  AS qtd_transacoes,
@@ -109,10 +80,6 @@ GROUP BY e.nome_estabelecimento
 ORDER BY total_brl DESC
 LIMIT 15;
 
-
--- =============================================================================
--- 7. Comportamento de parcelamento: à vista vs parcelado
--- =============================================================================
 
 SELECT
     CASE
@@ -129,10 +96,6 @@ GROUP BY tipo_compra
 ORDER BY total_brl DESC;
 
 
--- =============================================================================
--- 8. Distribuição de parcelas (quantidade de vezes por total_parcelas)
--- =============================================================================
-
 SELECT
     f.total_parcelas,
     f.parcela_texto AS exemplo_parcela,
@@ -144,10 +107,6 @@ WHERE f.valor_brl > 0
 GROUP BY f.total_parcelas, f.parcela_texto
 ORDER BY f.total_parcelas, qtd_transacoes DESC;
 
-
--- =============================================================================
--- 9. Dia da semana com mais transações e maior volume
--- =============================================================================
 
 SELECT
     d.dia_semana,
@@ -162,10 +121,6 @@ GROUP BY d.dia_semana, d.nome_dia
 ORDER BY qtd_transacoes DESC;
 
 
--- =============================================================================
--- 10. Estornos e créditos: total e impacto por titular
--- =============================================================================
-
 SELECT
     t.nome_titular,
     COUNT(f.id_transacao)  AS qtd_estornos,
@@ -178,10 +133,6 @@ GROUP BY t.nome_titular
 ORDER BY total_estornos_brl ASC;
 
 
--- =============================================================================
--- 11. Estornos e créditos por categoria
--- =============================================================================
-
 SELECT
     c.nome_categoria,
     COUNT(f.id_transacao)  AS qtd_estornos,
@@ -192,10 +143,6 @@ WHERE f.valor_brl < 0
 GROUP BY c.nome_categoria
 ORDER BY total_estornos_brl ASC;
 
-
--- =============================================================================
--- 12. Transações em moeda estrangeira (USD)
--- =============================================================================
 
 SELECT
     t.nome_titular,
@@ -214,10 +161,6 @@ WHERE f.valor_usd > 0
 ORDER BY d.ano, d.mes, t.nome_titular;
 
 
--- =============================================================================
--- 13. Ranking de categorias por titular
--- =============================================================================
-
 SELECT
     t.nome_titular,
     c.nome_categoria,
@@ -235,10 +178,6 @@ GROUP BY t.nome_titular, c.nome_categoria
 ORDER BY t.nome_titular, ranking;
 
 
--- =============================================================================
--- 14. Evolução trimestral por categoria (análise de tendência)
--- =============================================================================
-
 SELECT
     d.ano,
     d.trimestre,
@@ -252,10 +191,6 @@ WHERE f.valor_brl > 0
 GROUP BY d.ano, d.trimestre, c.nome_categoria
 ORDER BY d.ano, d.trimestre, total_brl DESC;
 
-
--- =============================================================================
--- 15. Resumo geral do Data Warehouse (KPIs)
--- =============================================================================
 
 SELECT
     COUNT(*)                                                     AS total_registros,
